@@ -72,46 +72,45 @@ cv::Rect findBoundingBox(TrackedObject& object,
   return cv::Rect(min_x, min_y, max_x - min_x, max_y - min_y);
 }
 
-cv::Rect camShiftTracking(cv::Rect box0, Scene& sc)
+cv::Rect camShiftTracking(cv::Rect originalBox, cv::Mat originalImage, Scene& sc)
 {
-    //tracking algorithms
-    //meanshift -> camshift
-    cv::Rect box1 = box0;
+	//tracking algorithms camshift
+	cv::Rect trackBox = originalBox;
 	 
-	CvConnectedComp track_comp;
 	int hsize = 16;
-	float hranges[] = {0,180};//hranges在后面的计算直方图函数中要用到
+	float hranges[] = {0,180}; 
 	const float* phranges = hranges;
-	cv::Rect trackWindow = box0; // start from the previous tracking windows
-	cv::RotatedRect trackBox;//定义一个旋转的矩阵类对象
-
-	cv::Mat frame, hsv, hue, mask, hist = cv::Mat::zeros(sc.img_.cols, sc.img_.rows, CV_8UC3), backproj;
-
- 
-	cv::cvtColor(sc.img_, hsv, CV_BGR2HSV);//将rgb摄像头帧转化成hsv空间的
- 	int ch[] = {0, 0};
-	hue.create(hsv.size(), hsv.depth());//hue初始化为与hsv大小深度一样的矩阵，红绿蓝之间相差120度，反色相差180度
-	cv::mixChannels(&hsv, 1, &hue, 1, ch, 1);//将hsv第一个通道(也就是色调)的数复制到hue中，0索引数组
+	cv::Rect trackWindow = originalBox; // start from the previous tracking windows
+	cv::RotatedRect trackRotatedBox; 
+	int vmin = 10, vmax = 256, smin = 30;
+	cv::Mat frame, hsv, hue, mask, hist = cv::Mat::zeros(originalImage.cols, originalImage.rows, CV_8UC3), backproj;
 
 
-	if(DEBUG==2)printf("## camShiftTracking mixChannel \n ");
-	if(DEBUG==2)printf("## camShiftTracking hue x, y %d %d, box width height %d %d\n", hue.cols, hue.rows, box0.width, box0.height);
-	cv::Mat roi(hue, box0);//mask保存的hsv的最小值
-	if(DEBUG==2)printf("## camShiftTracking roi  \n");
-	calcHist(&roi, 1, 0, cv::Mat(), hist, 1, &hsize, &phranges);//将roi的0通道计算直方图并通过mask放入hist中，hsize为每一维直方图的大小
-	if(DEBUG==2)printf("## camShiftTracking calcHist  \n");
-	normalize(hist, hist, 0, 255, CV_MINMAX);//将hist矩阵进行数组范围归一化，都归一化到0~255
- 
+	cv::cvtColor(originalImage, hsv, CV_BGR2HSV);// from rgb to hsv
 
-	cv::calcBackProject(&hue, 1, 0, hist, backproj, &phranges); //计算直方图的反向投影，计算hue图像0通道直方图hist的反向投影，并让入backproj中
-	//backproj &= mask;
-	if(DEBUG==2)printf("## camShiftTracking calBackProject  \n");
+	cv::inRange(hsv, cv::Scalar(0, smin, MIN(vmin,vmax)),
+		     cv::Scalar(180, 256, MAX(vmin, vmax)), mask);
+	int ch[] = {0, 0};
+	hue.create(hsv.size(), hsv.depth()); 
+	cv::mixChannels(&hsv, 1, &hue, 1, ch, 1);// copy h from hsv to hue
+
+	cv::Mat roi(hue, originalBox); 
+	calcHist(&roi, 1, 0, cv::Mat(), hist, 1, &hsize, &phranges); 
+	normalize(hist, hist, 0, 255, CV_MINMAX); 
+
+	cv::calcBackProject(&hue, 1, 0, hist, backproj, &phranges);  
+	//backproj &= mask;// do
 	 
-       trackBox = cv::CamShift(backproj, trackWindow,             
-			          cv::TermCriteria( CV_TERMCRIT_EPS | CV_TERMCRIT_ITER, 10, 1 ));//CV_TERMCRIT_EPS是通过
  
-    if(DEBUG==2)printf("\n## originRect x %d, y %d; trackBox x %d,y %d \n", box0.width, box0.height, trackBox.center.x, trackBox.center.y);
-    return cv::Rect(trackBox.center.x - box0.width/2, trackBox.center.y - box0.height/2, box0.width, box0.height);
+	trackRotatedBox = cv::CamShift(backproj, trackWindow,             
+				  cv::TermCriteria( CV_TERMCRIT_EPS | CV_TERMCRIT_ITER, 10, 1 )); 
+ 
+	trackBox = trackRotatedBox.boundingRect();
+	if(DEBUG==2)printf("\n## originRect x,y,width,height %d %d %d %d; targetRect x,y,width,height %d %d %d %d\n", 
+			originalBox.x, originalBox.y, originalBox.width, originalBox.height, 
+			trackBox.x, trackBox.y, trackBox.width, trackBox.height);
+	return trackBox;
+
 }// end of CamShiftTracking
 
 void calcObjectHistograms(vector<TrackedObject>& objects,
@@ -167,19 +166,22 @@ int main(int argc, char** argv)
   calcObjectHistograms(seed_objects, seed_frame, &histograms);
 
  
-  cv::Rect box0 = findBoundingBox(seed_objects[1], seed_frame);
-
-  
-  Scene& frame0 = *seq.getScene(10);
-  // input Rect box0, current scence frame0
-  // output Rect box1
-  cv::Rect box1 = camShiftTracking(box0, frame0);
 
 
-  
-  drawBoxOnScene(frame0, box1);
+  size_t i = 10;
 
-  cv::imwrite("/home/sandra/cs231a/test.jpg", frame0.img_);
+  Scene& targetframe = *seq.getScene(i);
+
+  for(int j=0; j< seed_objects.size(); j++)
+  {
+    cv::Rect originalBox = findBoundingBox(seed_objects[j], seed_frame);
+    cv::Rect trackedBox = camShiftTracking(originalBox, seed_frame.img_, targetframe);
+    drawBoxOnScene(targetframe, trackedBox);
+  }
+
+
+
+  cv::imwrite("/home/sandra/cs231a/test.jpg", targetframe.img_);
   //double scale = 0.5;
   //if(getenv("SCALE"))
   //  scale = atof(getenv("SCALE"));
