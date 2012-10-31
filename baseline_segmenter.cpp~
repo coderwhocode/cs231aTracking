@@ -85,6 +85,9 @@ void segmentObjectsTemplates(Scene& seed_frame, Scene& sc) {
   vector<TrackedObject>& seed_objects = seed_frame.segmentation_->tracked_objects_; 
   vector<TrackedObject> tracked_objects(seed_objects.size());
 
+  Eigen::MatrixXi seed_cam_points = sc.cam_points_;
+  Eigen::MatrixXi cam_points = sc.cam_points_;
+
   for (size_t i = 0; i < seed_objects.size(); ++i) {
     TrackedObject obj = seed_objects[i];
     for (size_t j = 0; j < obj.indices_.size(); ++j) {
@@ -92,7 +95,7 @@ void segmentObjectsTemplates(Scene& seed_frame, Scene& sc) {
       tracked_objects[i].indices_.push_back(index);
     }
   }
-  cout<< "segmentObjectsTemplates() size"<< seed_objects.size() << " "<< tracked_objects.size()<<endl;
+  
   for (size_t i = 0; i < tracked_objects.size(); ++i) {
     sc.addTrackedObject(tracked_objects[i]);
   }

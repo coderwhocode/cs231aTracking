@@ -14,7 +14,7 @@ string usageString()
 
 int main(int argc, char** argv)
 {
-  if(argc != 2 && argc !=3) {
+  if(argc != 2) {
     cout << usageString() << endl;
     return 1;
   }
@@ -24,13 +24,8 @@ int main(int argc, char** argv)
     cout << path << " does not exist." << endl;
     return 2;
   }
-  
-  double scale = 1.0;
-  if(argc ==3)
-  {
-    scale = atof(argv[2]);
-  }
 
+  double scale = 1.0;
   if(getenv("SCALE"))
     scale = atof(getenv("SCALE"));
   OpenCVView view("Image", scale);
